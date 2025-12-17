@@ -12,15 +12,15 @@ use crate::{
     HopAccounts,
 };
 
-// #[repr(C)]
-// pub struct DeriverseSwapData {
-//     pub tag: u8,
-//     pub input_crncy: u8,
-//     pub padding_u16: u16,
-//     pub instr_id: u32, // InstrId ??
-//     pub price: i64,    // fixed point decimals ??
-//     pub amount: i64,   //
-// }
+#[repr(C)]
+pub struct DeriverseSwapData {
+    pub tag: u8,
+    pub input_crncy: u8,
+    pub padding_u16: u16,
+    pub instr_id: u32, // InstrId ??
+    pub price: i64,    // fixed point decimals ??
+    pub amount: i64,   //
+}
 
 const ARGS_LEN: usize = 24;
 
