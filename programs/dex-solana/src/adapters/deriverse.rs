@@ -1,7 +1,7 @@
 use anchor_lang::{prelude::*, solana_program::instruction::Instruction};
 use anchor_spl::{
     token::Token,
-    token_interface::{Mint, TokenAccount},
+    token_interface::{spl_pod::primitives::PodU32, Mint, TokenAccount},
 };
 use arrayref::array_ref;
 
@@ -12,20 +12,40 @@ use crate::{
     HopAccounts,
 };
 
-// #[repr(C)]
-// pub struct DeriverseSwapData {
-//     pub tag: u8,
-//     pub input_crncy: u8,
-//     pub padding_u16: u16,
-//     pub instr_id: u32, // InstrId ??
-//     pub price: i64,    // fixed point decimals ??
-//     pub amount: i64,   //
-// }
+#[repr(C)]
+pub struct DeriverseSwapData {
+    pub tag: u8, // 26
+    pub input_crncy: u8,
+    pub padding_u16: u16,
+    pub instr_id: u32,
+    pub price: i64,
+    pub amount: i64,
+}
 
-const ARGS_LEN: usize = 24;
+pub const INSTRUCTION_NUMBER: u32 = 26;
+
+impl DeriverseSwapData {
+    pub fn to_bytes(&self) -> Vec<u8> {
+        let mut buf = Vec::<u8>::with_capacity(std::mem::size_of::<Self>());
+        buf.push(self.tag);
+        buf.push(self.input_crncy);
+        buf.extend_from_slice(&self.padding_u16.to_le_bytes());
+        buf.extend_from_slice(&self.instr_id.to_le_bytes());
+        buf.extend_from_slice(&self.price.to_le_bytes());
+        buf.extend_from_slice(&self.amount.to_le_bytes());
+
+        buf
+    }
+}
+
+// const ARGS_LEN: usize = 28;
 
 pub struct DeriverseSwapAccounts<'info> {
-    pub signer: &'info AccountInfo<'info>,
+    pub authority: &'info AccountInfo<'info>,
+    pub source_token_acc: &'info AccountInfo<'info>, // A or B
+    pub destination_token_acc: &'info AccountInfo<'info>, // A or B
+
+    // A B instrument
     pub root: &'info AccountInfo<'info>,
     pub instrument: &'info AccountInfo<'info>,
     pub bids_tree: &'info AccountInfo<'info>,
@@ -40,18 +60,18 @@ pub struct DeriverseSwapAccounts<'info> {
     pub candles_15m: &'info AccountInfo<'info>,
     pub candles_day: &'info AccountInfo<'info>,
     pub community: &'info AccountInfo<'info>,
-    pub asset_token_program: Program<'info, Token>,
-    pub crncy_token_program: Program<'info, Token>,
-    pub asset_mint: &'info AccountInfo<'info>,
-    pub crncy_mint: &'info AccountInfo<'info>,
-    pub asset_token: InterfaceAccount<'info, TokenAccount>,
-    pub crncy_token: InterfaceAccount<'info, TokenAccount>,
-    pub client_asset_token: InterfaceAccount<'info, TokenAccount>,
-    pub client_crncy_token: InterfaceAccount<'info, TokenAccount>,
+    pub asset_token_program_acc: &'info AccountInfo<'info>, // spl acc of a program
+    pub crncy_token_program_acc: &'info AccountInfo<'info>, // spl acc of a program
+    pub asset_mint: &'info AccountInfo<'info>,              // mint
+    pub crncy_mint: &'info AccountInfo<'info>,              // mint
+    pub asset_token_acc: &'info AccountInfo<'info>,         // pda TokenState
+    pub crncy_token_acc: &'info AccountInfo<'info>,         // pda TokenState
+    // pub client_asset_token_acc: &'info AccountInfo<'info>, // spl acc of a client
+    // pub client_crncy_token_acc: &'info AccountInfo<'info>, // spl acc of a client
     pub drvs_auth: &'info AccountInfo<'info>,
     pub system_program: &'info AccountInfo<'info>,
-    pub asset_token_program_id: &'info AccountInfo<'info>,
-    pub crncy_token_program_id: &'info AccountInfo<'info>,
+    pub asset_token_program_id: &'info AccountInfo<'info>, // token / token2022
+    pub crncy_token_program_id: &'info AccountInfo<'info>, // token / token2022
     pub associated_program_id: &'info AccountInfo<'info>,
 }
 
@@ -60,7 +80,9 @@ const ACCOUNTS_LEN: usize = 28;
 impl<'info> DeriverseSwapAccounts<'info> {
     fn parse_accounts(accounts: &'info [AccountInfo<'info>], offset: usize) -> Result<Self> {
         let [
-            signer,
+            authority,
+            source_token_acc,
+            destination_token_acc,
             root,
             instruction,
             bids_tree,
@@ -75,14 +97,12 @@ impl<'info> DeriverseSwapAccounts<'info> {
             candles_15m,
             candles_day,
             community,
-            asset_token_program,
-            crncy_token_program,
+            asset_token_program_acc,
+            crncy_token_program_acc,
             asset_mint,
             crncy_mint,
-            asset_token,
-            crncy_token,
-            client_asset_token,
-            client_crncy_token,
+            asset_token_acc,
+            crncy_token_acc,
             drvs_auth,
             system_program,
             asset_token_program_id,
@@ -92,7 +112,9 @@ impl<'info> DeriverseSwapAccounts<'info> {
             array_ref![accounts, offset, ACCOUNTS_LEN];
 
         Ok(Self {
-            signer,
+            authority,
+            source_token_acc,
+            destination_token_acc,
             root,
             instrument: instruction,
             bids_tree,
@@ -107,25 +129,43 @@ impl<'info> DeriverseSwapAccounts<'info> {
             candles_15m,
             candles_day,
             community,
-            asset_token_program: Program::try_from(asset_token_program)?,
-            crncy_token_program: Program::try_from(crncy_token_program)?,
             asset_mint,
             crncy_mint,
-            asset_token: InterfaceAccount::try_from(asset_token)?,
-            crncy_token: InterfaceAccount::try_from(crncy_token)?,
-            client_asset_token: InterfaceAccount::try_from(client_asset_token)?,
-            client_crncy_token: InterfaceAccount::try_from(client_crncy_token)?,
             drvs_auth,
             system_program,
             asset_token_program_id,
             crncy_token_program_id,
             associated_program_id,
+            asset_token_program_acc,
+            crncy_token_program_acc,
+            asset_token_acc,
+            crncy_token_acc,
         })
     }
 }
 
 pub struct DeriverseProcessor;
 impl DexProcessor for DeriverseProcessor {}
+
+#[repr(C)]
+pub struct TokenState {
+    pub discriminator: (u32, u32),
+    pub address: Pubkey, // token mint
+    pub program_address: Pubkey,
+    pub id: u32,
+    pub mask: u32,
+    pub reserved: u32,
+    pub base_crncy_index: u32,
+}
+
+impl TokenState {
+    fn get_address_from_raw(data: &[u8]) -> Pubkey {
+        // discriminator: (u32, u32)
+        // address: Pubkey
+        let address_bytes: [u8; 32] = data[8..8 + 32].try_into().unwrap();
+        Pubkey::new_from_array(address_bytes)
+    }
+}
 
 pub fn swap<'a>(
     remaining_accounts: &'a [AccountInfo<'a>],
@@ -149,26 +189,61 @@ pub fn swap<'a>(
     let swap_accounts = DeriverseSwapAccounts::parse_accounts(remaining_accounts, *offset)?;
 
     before_check(
-        swap_accounts.signer,
-        &swap_accounts.client_crncy_token,
-        swap_accounts.client_asset_token.key(),
+        swap_accounts.authority,
+        &InterfaceAccount::try_from(swap_accounts.source_token_acc)?,
+        swap_accounts.destination_token_acc.key(),
         hop_accounts,
         hop,
         proxy_swap,
         owner_seeds,
     )?;
 
-    let instr_data = swap_accounts.instrument.data.borrow();
-    let instr_id = u32::from_le_bytes(*array_ref![instr_data, 8, 4]);
+    let instr_id = u32::from_le_bytes(*array_ref![, 8, 4]);
 
-    let mut data = Vec::<u8>::with_capacity(ARGS_LEN);
-    data.extend_from_slice(&[26, { todo!("input_crncy") }, 0, 0]);
-    data.extend_from_slice(&instr_id.to_le_bytes());
-    data.extend_from_slice(&[0; 8]);
-    data.extend_from_slice(&amount_in.to_le_bytes());
+    let asset_token_mint: Pubkey =
+        TokenState::get_address_from_raw(swap_accounts.asset_token_acc.try_borrow_data()?.as_ref());
+    let crncy_token_mint: Pubkey =
+        TokenState::get_address_from_raw(swap_accounts.crncy_token_acc.try_borrow_data()?.as_ref());
+
+    // A B - crncy
+    //
+    // A -> B
+    // B -> A
+    let (input_crncy, a_account, b_account) =
+        if crncy_token_mint == *swap_accounts.source_token_acc.owner {
+            if asset_token_mint != *swap_accounts.destination_token_acc.owner {
+                panic!("Invalid destination mint is provided");
+            }
+            (
+                true,
+                swap_accounts.destination_token_acc,
+                swap_accounts.source_token_acc,
+            )
+        } else {
+            todo!()
+        };
+    // } else if b_token_state.address == *destination_mint {
+    //     if a_token_state.address != *source_mint {
+    //         bail!("Invalid source mint is provided");
+    //     }
+    //     (false, source_token_account, destination_token_account)
+    // } else {
+    //     bail!(
+    //         "None of source mint and destination mint matches crcny mint {}",
+    //         b_token_state.address
+    //     );
+    // };
+    let instruction_data = DeriverseSwapData {
+        tag: 26,
+        input_crncy: input_crncy as u8,
+        padding_u16: 0,
+        instr_id,
+        price: 0,
+        amount: amount_in as i64,
+    };
 
     let account_metas = vec![
-        AccountMeta::new(swap_accounts.signer.key(), true),
+        AccountMeta::new(swap_accounts.authority.key(), true),
         AccountMeta::new_readonly(swap_accounts.root.key(), false),
         AccountMeta::new(swap_accounts.instrument.key(), false),
         AccountMeta::new(swap_accounts.bids_tree.key(), false),
@@ -183,14 +258,14 @@ pub fn swap<'a>(
         AccountMeta::new(swap_accounts.candles_15m.key(), false),
         AccountMeta::new(swap_accounts.candles_day.key(), false),
         AccountMeta::new_readonly(swap_accounts.community.key(), false),
-        AccountMeta::new(swap_accounts.asset_token_program.key(), false),
-        AccountMeta::new(swap_accounts.crncy_token_program.key(), false),
+        AccountMeta::new(swap_accounts.asset_token_program_acc.key(), false),
+        AccountMeta::new(swap_accounts.crncy_token_program_acc.key(), false),
         AccountMeta::new_readonly(swap_accounts.asset_mint.key(), false),
         AccountMeta::new_readonly(swap_accounts.crncy_mint.key(), false),
-        AccountMeta::new_readonly(swap_accounts.asset_token.key(), false),
-        AccountMeta::new_readonly(swap_accounts.crncy_token.key(), false),
-        AccountMeta::new(swap_accounts.client_asset_token.key(), false),
-        AccountMeta::new(swap_accounts.client_crncy_token.key(), false),
+        AccountMeta::new_readonly(swap_accounts.asset_token_acc.key(), false),
+        AccountMeta::new_readonly(swap_accounts.crncy_token_acc.key(), false),
+        AccountMeta::new(a_account.key(), false),
+        AccountMeta::new(b_account.key(), false),
         AccountMeta::new_readonly(swap_accounts.drvs_auth.key(), false),
         AccountMeta::new_readonly(swap_accounts.system_program.key(), false),
         AccountMeta::new_readonly(swap_accounts.asset_token_program_id.key(), false),
@@ -232,7 +307,7 @@ pub fn swap<'a>(
     let instruction: Instruction = Instruction {
         program_id: deriverse_program::id(),
         accounts: account_metas,
-        data,
+        data: instruction_data.to_bytes(),
     };
 
     let dex_processor = &DeriverseProcessor;
