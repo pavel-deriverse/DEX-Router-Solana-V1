@@ -502,3 +502,8 @@ pub mod futarchy_amm_program {
     use anchor_lang::declare_id;
     declare_id!("FUTARELBfJfQ8RDGhg1wdhddq1odMAJUePHFuBYfUxKq");
 }
+
+pub mod deriverse_program {
+    use anchor_lang::declare_id;
+    declare_id!("DRVSpZ2YUYYKgZP8XtLhAGtT1zYSCKzeHfb4DgRnrgqD");
+}
