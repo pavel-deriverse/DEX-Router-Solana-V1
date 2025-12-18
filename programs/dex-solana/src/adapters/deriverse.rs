@@ -235,7 +235,7 @@ pub fn swap<'a>(
 
     let data = DeriverseSwapData {
         tag: DERIVERSE_INSTRUCTION_TAG,
-        input_crncy: !input_is_crncy as u8,
+        input_crncy: input_is_crncy as u8,
         padding_u16: 0,
         instr_id,
         price: 0,
