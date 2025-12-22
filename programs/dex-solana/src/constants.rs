@@ -93,6 +93,7 @@ pub const HUMIDIFI_IX_DATA_KEY: u64 = u64::from_le_bytes([
 pub const ALPHAQ_SWAP_SELECTOR: &[u8; 1] = &[0x0c];
 
 pub const DERIVERSE_INSTRUCTION_TAG: u8 = 26;
+pub const DERIVERSE_VERSION: u32 = 1;
 
 pub const BUY_EXACT_SOL_IN_SELECTOR: &[u8; 8] = &[56, 252, 116, 8, 158, 223, 205, 95]; // 38 fc 74 08 9e df cd 5f
 pub const BUY_EXACT_QUOTE_IN_SELECTOR: &[u8; 8] = &[198, 46, 21, 82, 180, 217, 232, 112]; // c6 2e 15 52 b4 d9 e8 70
