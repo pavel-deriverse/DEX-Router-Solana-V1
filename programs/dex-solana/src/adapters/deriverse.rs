@@ -52,17 +52,17 @@ pub struct DeriverseSwapAccounts<'info> {
     pub candles_15m: &'info AccountInfo<'info>,
     pub candles_day: &'info AccountInfo<'info>,
     pub community: &'info AccountInfo<'info>,
-    pub asset_token_program_acc: &'info AccountInfo<'info>,
-    pub crncy_token_program_acc: &'info AccountInfo<'info>,
+    pub drvs_vault_asset_token_acc: &'info AccountInfo<'info>,
+    pub drvs_vault_crncy_token_acc: &'info AccountInfo<'info>,
     pub asset_mint: &'info AccountInfo<'info>,
     pub crncy_mint: &'info AccountInfo<'info>,
-    pub asset_token_acc: &'info AccountInfo<'info>,
-    pub crncy_token_acc: &'info AccountInfo<'info>,
+    pub drvs_asset_token_state: &'info AccountInfo<'info>,
+    pub drvs_crncy_token_state: &'info AccountInfo<'info>,
     pub drvs_auth: &'info AccountInfo<'info>,
     pub system_program: &'info AccountInfo<'info>,
-    pub asset_token_program_id: &'info AccountInfo<'info>,
-    pub crncy_token_program_id: &'info AccountInfo<'info>,
-    pub associated_program_id: &'info AccountInfo<'info>,
+    pub asset_token_program: &'info AccountInfo<'info>,
+    pub crncy_token_program: &'info AccountInfo<'info>,
+    pub associated_token_program: &'info AccountInfo<'info>,
 }
 
 const ACCOUNTS_LEN: usize = 28;
@@ -73,6 +73,10 @@ impl<'info> DeriverseSwapAccounts<'info> {
             authority,
             source_token_acc,
             destination_token_acc,
+            asset_mint,
+            crncy_mint,
+
+            // PDAs
             root,
             instrument,
             bids_tree,
@@ -87,17 +91,18 @@ impl<'info> DeriverseSwapAccounts<'info> {
             candles_15m,
             candles_day,
             community,
-            asset_token_program_acc,
-            crncy_token_program_acc,
-            asset_mint,
-            crncy_mint,
-            asset_token_acc,
-            crncy_token_acc,
+            drvs_vault_asset_token_acc,
+            drvs_vault_crncy_token_acc,
+            drvs_asset_token_state,
+            drvs_crncy_token_state,
             drvs_auth,
+
+            // Core programs
             system_program,
-            asset_token_program_id,
-            crncy_token_program_id,
-            associated_program_id,
+            asset_token_program,
+            crncy_token_program,
+            associated_token_program,
+
         ]: &[AccountInfo<'info>; ACCOUNTS_LEN] =
             array_ref![accounts, offset, ACCOUNTS_LEN];
 
@@ -123,13 +128,13 @@ impl<'info> DeriverseSwapAccounts<'info> {
             crncy_mint,
             drvs_auth,
             system_program,
-            asset_token_program_id,
-            crncy_token_program_id,
-            associated_program_id,
-            asset_token_program_acc,
-            crncy_token_program_acc,
-            asset_token_acc,
-            crncy_token_acc,
+            asset_token_program,
+            crncy_token_program,
+            associated_token_program,
+            drvs_vault_asset_token_acc,
+            drvs_vault_crncy_token_acc,
+            drvs_asset_token_state,
+            drvs_crncy_token_state,
         })
     }
 }
@@ -194,11 +199,11 @@ pub fn swap<'a>(
     };
 
     let asset_mint =
-        TokenState::get_address_from_raw(&swap_accounts.asset_token_acc.try_borrow_data()?);
+        TokenState::get_address_from_raw(&swap_accounts.drvs_asset_token_state.try_borrow_data()?);
     let crncy_mint =
-        TokenState::get_address_from_raw(&swap_accounts.crncy_token_acc.try_borrow_data()?);
+        TokenState::get_address_from_raw(&swap_accounts.drvs_crncy_token_state.try_borrow_data()?);
 
-    let (input_is_crncy, crncy_acc, asset_acc) = {
+    let (input_is_crncy, client_crncy, client_asset) = {
         if crncy_mint == *swap_accounts.source_token_acc.owner {
             (
                 true,
@@ -258,19 +263,19 @@ pub fn swap<'a>(
         AccountMeta::new(swap_accounts.candles_15m.key(), false),
         AccountMeta::new(swap_accounts.candles_day.key(), false),
         AccountMeta::new_readonly(swap_accounts.community.key(), false),
-        AccountMeta::new(swap_accounts.asset_token_program_acc.key(), false),
-        AccountMeta::new(swap_accounts.crncy_token_program_acc.key(), false),
+        AccountMeta::new(swap_accounts.drvs_vault_asset_token_acc.key(), false),
+        AccountMeta::new(swap_accounts.drvs_vault_crncy_token_acc.key(), false),
         AccountMeta::new_readonly(swap_accounts.asset_mint.key(), false),
         AccountMeta::new_readonly(swap_accounts.crncy_mint.key(), false),
-        AccountMeta::new_readonly(swap_accounts.asset_token_acc.key(), false),
-        AccountMeta::new_readonly(swap_accounts.crncy_token_acc.key(), false),
-        AccountMeta::new(asset_acc.key(), false),
-        AccountMeta::new(crncy_acc.key(), false),
+        AccountMeta::new_readonly(swap_accounts.drvs_asset_token_state.key(), false),
+        AccountMeta::new_readonly(swap_accounts.drvs_crncy_token_state.key(), false),
+        AccountMeta::new(client_asset.key(), false),
+        AccountMeta::new(client_crncy.key(), false),
         AccountMeta::new_readonly(swap_accounts.drvs_auth.key(), false),
         AccountMeta::new_readonly(swap_accounts.system_program.key(), false),
-        AccountMeta::new_readonly(swap_accounts.asset_token_program_id.key(), false),
-        AccountMeta::new_readonly(swap_accounts.crncy_token_program_id.key(), false),
-        AccountMeta::new_readonly(swap_accounts.associated_program_id.key(), false),
+        AccountMeta::new_readonly(swap_accounts.asset_token_program.key(), false),
+        AccountMeta::new_readonly(swap_accounts.crncy_token_program.key(), false),
+        AccountMeta::new_readonly(swap_accounts.associated_token_program.key(), false),
     ];
 
     let account_infos = vec![
@@ -289,19 +294,19 @@ pub fn swap<'a>(
         swap_accounts.candles_15m.to_account_info(),
         swap_accounts.candles_day.to_account_info(),
         swap_accounts.community.to_account_info(),
-        swap_accounts.asset_token_program_acc.to_account_info(),
-        swap_accounts.crncy_token_program_acc.to_account_info(),
+        swap_accounts.drvs_vault_asset_token_acc.to_account_info(),
+        swap_accounts.drvs_vault_crncy_token_acc.to_account_info(),
         swap_accounts.asset_mint.to_account_info(),
         swap_accounts.crncy_mint.to_account_info(),
-        swap_accounts.asset_token_acc.to_account_info(),
-        swap_accounts.crncy_token_acc.to_account_info(),
-        asset_acc.to_account_info(),
-        crncy_acc.to_account_info(),
+        swap_accounts.drvs_asset_token_state.to_account_info(),
+        swap_accounts.drvs_crncy_token_state.to_account_info(),
+        client_asset.to_account_info(),
+        client_crncy.to_account_info(),
         swap_accounts.drvs_auth.to_account_info(),
         swap_accounts.system_program.to_account_info(),
-        swap_accounts.asset_token_program_id.to_account_info(),
-        swap_accounts.crncy_token_program_id.to_account_info(),
-        swap_accounts.associated_program_id.to_account_info(),
+        swap_accounts.asset_token_program.to_account_info(),
+        swap_accounts.crncy_token_program.to_account_info(),
+        swap_accounts.associated_token_program.to_account_info(),
     ];
 
     let instruction: Instruction = Instruction {
