@@ -113,6 +113,7 @@ pub enum Dex {
     AlphaQ,
     FutarchyAmm,
     PumpfunSell2,
+    Deriverse,
 }
 
 #[derive(Debug)]
@@ -860,6 +861,7 @@ fn distribute_swap<'a>(
                 payer,
             );
         }
+        Dex::Deriverse => deriverse::swap,
     };
     swap_function(remaining_accounts, amount_in, offset, hop_accounts, hop, proxy_from, owner_seeds)
 }

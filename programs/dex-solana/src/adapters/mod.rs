@@ -3,6 +3,7 @@ pub mod alphaq;
 pub mod boopfun;
 pub mod byreal_clmm;
 pub mod common;
+pub mod deriverse;
 pub mod dooar;
 pub mod fluxbeam;
 pub mod futarchy;

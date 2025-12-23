@@ -1,0 +1,12 @@
+[package]
+name = "deriverse-accounts"
+version = "0.1.0"
+description = "Set of functions for calculating the addresses of Deriverse's remaining accounts"
+edition = "2021"
+
+[lib]
+name = "drvs_accounts"
+
+[dependencies]
+solana-sdk = "2.2.1"
+drv-models = { git = "https://github.com/deriverse/drv-smart-contract-common", rev = "87c9b03dbcc3edffc7ebd58565c3333c54c1709c" }
