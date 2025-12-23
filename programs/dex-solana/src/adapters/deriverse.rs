@@ -37,7 +37,7 @@ pub struct DeriverseSwapAccounts<'info> {
     pub source_token_acc: &'info AccountInfo<'info>,
     pub destination_token_acc: &'info AccountInfo<'info>,
 
-    // A/B instrument
+    // A/B and B/A accounts
     pub root: &'info AccountInfo<'info>,
     pub instrument: &'info AccountInfo<'info>,
     pub bids_tree: &'info AccountInfo<'info>,
@@ -68,15 +68,23 @@ pub struct DeriverseSwapAccounts<'info> {
 const ACCOUNTS_LEN: usize = 28;
 
 impl<'info> DeriverseSwapAccounts<'info> {
+    #[inline]
     fn parse_accounts(accounts: &'info [AccountInfo<'info>], offset: usize) -> Result<Self> {
         let [
             authority,
             source_token_acc,
             destination_token_acc,
+
+            // A/B and B/A remaining accounts
+
+            // non calculated
+            drvs_vault_asset_token_acc,
+            drvs_vault_crncy_token_acc,
             asset_mint,
             crncy_mint,
 
-            // PDAs
+
+            // calculated
             root,
             instrument,
             bids_tree,
@@ -91,13 +99,11 @@ impl<'info> DeriverseSwapAccounts<'info> {
             candles_15m,
             candles_day,
             community,
-            drvs_vault_asset_token_acc,
-            drvs_vault_crncy_token_acc,
             drvs_asset_token_state,
             drvs_crncy_token_state,
             drvs_auth,
 
-            // Core programs
+            // programs
             system_program,
             asset_token_program,
             crncy_token_program,
@@ -136,6 +142,133 @@ impl<'info> DeriverseSwapAccounts<'info> {
             drvs_asset_token_state,
             drvs_crncy_token_state,
         })
+    }
+
+    #[inline]
+    fn is_crncy_input(&self) -> Result<bool> {
+        let input_is_crncy = if self.crncy_token_program.key() == *self.source_token_acc.owner {
+            true
+        } else {
+            false
+        };
+
+        require_keys_eq!(
+            if input_is_crncy {
+                self.crncy_token_program.key()
+            } else {
+                self.asset_token_program.key()
+            },
+            *self.source_token_acc.owner,
+            ErrorCode::InvalidSourceTokenAccount
+        );
+        require_keys_eq!(
+            if input_is_crncy {
+                self.asset_token_program.key()
+            } else {
+                self.crncy_token_program.key()
+            },
+            *self.destination_token_acc.owner,
+            ErrorCode::InvalidDestinationTokenAccount
+        );
+        Ok(input_is_crncy)
+    }
+
+    #[inline]
+    fn create_data(&self, input_is_crncy: bool, amount_in: u64) -> Result<Vec<u8>> {
+        let instr_id = {
+            let instr_data = self.instrument.try_borrow_data()?;
+            u32::from_le_bytes(*array_ref![instr_data, 8, 4])
+        };
+
+        Ok(DeriverseSwapData {
+            tag: DERIVERSE_INSTRUCTION_TAG,
+            input_crncy: input_is_crncy as u8,
+            padding_u16: 0,
+            instr_id,
+            price: 0,
+            amount: amount_in as i64,
+        }
+        .to_bytes())
+    }
+
+    #[inline]
+    fn get_account_metas(&self, input_is_crncy: bool) -> Vec<AccountMeta> {
+        let (client_asset_token_acc, client_crncy_token_acc) = if input_is_crncy {
+            (self.destination_token_acc, self.source_token_acc)
+        } else {
+            (self.source_token_acc, self.destination_token_acc)
+        };
+
+        vec![
+            AccountMeta::new(self.authority.key(), true),
+            AccountMeta::new_readonly(self.root.key(), false),
+            AccountMeta::new(self.instrument.key(), false),
+            AccountMeta::new(self.bids_tree.key(), false),
+            AccountMeta::new(self.asks_tree.key(), false),
+            AccountMeta::new(self.bid_orders.key(), false),
+            AccountMeta::new(self.ask_orders.key(), false),
+            AccountMeta::new(self.lines.key(), false),
+            AccountMeta::new(self.map.key(), false),
+            AccountMeta::new(self.spot_client_infos.key(), false),
+            AccountMeta::new(self.spot_client_infos2.key(), false),
+            AccountMeta::new(self.candles_1m.key(), false),
+            AccountMeta::new(self.candles_15m.key(), false),
+            AccountMeta::new(self.candles_day.key(), false),
+            AccountMeta::new_readonly(self.community.key(), false),
+            AccountMeta::new(self.drvs_vault_asset_token_acc.key(), false),
+            AccountMeta::new(self.drvs_vault_crncy_token_acc.key(), false),
+            AccountMeta::new_readonly(self.asset_mint.key(), false),
+            AccountMeta::new_readonly(self.crncy_mint.key(), false),
+            AccountMeta::new_readonly(self.drvs_asset_token_state.key(), false),
+            AccountMeta::new_readonly(self.drvs_crncy_token_state.key(), false),
+            AccountMeta::new(client_asset_token_acc.key(), false),
+            AccountMeta::new(client_crncy_token_acc.key(), false),
+            AccountMeta::new_readonly(self.drvs_auth.key(), false),
+            AccountMeta::new_readonly(self.system_program.key(), false),
+            AccountMeta::new_readonly(self.asset_token_program.key(), false),
+            AccountMeta::new_readonly(self.crncy_token_program.key(), false),
+            AccountMeta::new_readonly(self.associated_token_program.key(), false),
+        ]
+    }
+
+    #[inline]
+    fn get_account_infos(&self, input_is_crncy: bool) -> Vec<AccountInfo<'info>> {
+        let (client_asset_token_acc, client_crncy_token_acc) = if input_is_crncy {
+            (self.destination_token_acc, self.source_token_acc)
+        } else {
+            (self.source_token_acc, self.destination_token_acc)
+        };
+
+        vec![
+            self.authority.to_account_info(),
+            self.root.to_account_info(),
+            self.instrument.to_account_info(),
+            self.bids_tree.to_account_info(),
+            self.asks_tree.to_account_info(),
+            self.bid_orders.to_account_info(),
+            self.ask_orders.to_account_info(),
+            self.lines.to_account_info(),
+            self.map.to_account_info(),
+            self.spot_client_infos.to_account_info(),
+            self.spot_client_infos2.to_account_info(),
+            self.candles_1m.to_account_info(),
+            self.candles_15m.to_account_info(),
+            self.candles_day.to_account_info(),
+            self.community.to_account_info(),
+            self.drvs_vault_asset_token_acc.to_account_info(),
+            self.drvs_vault_crncy_token_acc.to_account_info(),
+            self.asset_mint.to_account_info(),
+            self.crncy_mint.to_account_info(),
+            self.drvs_asset_token_state.to_account_info(),
+            self.drvs_crncy_token_state.to_account_info(),
+            client_asset_token_acc.to_account_info(),
+            client_crncy_token_acc.to_account_info(),
+            self.drvs_auth.to_account_info(),
+            self.system_program.to_account_info(),
+            self.asset_token_program.to_account_info(),
+            self.crncy_token_program.to_account_info(),
+            self.associated_token_program.to_account_info(),
+        ]
     }
 }
 
@@ -193,127 +326,18 @@ pub fn swap<'a>(
         owner_seeds,
     )?;
 
-    let instr_id = {
-        let instr_data = swap_accounts.instrument.try_borrow_data()?;
-        u32::from_le_bytes(*array_ref![instr_data, 8, 4])
-    };
+    let input_is_crncy = swap_accounts.is_crncy_input()?;
 
-    let asset_mint =
-        TokenState::get_address_from_raw(&swap_accounts.drvs_asset_token_state.try_borrow_data()?);
-    let crncy_mint =
-        TokenState::get_address_from_raw(&swap_accounts.drvs_crncy_token_state.try_borrow_data()?);
+    let data = swap_accounts.create_data(input_is_crncy, amount_in)?;
 
-    let (input_is_crncy, client_crncy, client_asset) = {
-        if crncy_mint == *swap_accounts.source_token_acc.owner {
-            (
-                true,
-                swap_accounts.source_token_acc,
-                swap_accounts.destination_token_acc,
-            )
-        } else {
-            (
-                false,
-                swap_accounts.destination_token_acc,
-                swap_accounts.source_token_acc,
-            )
-        }
-    };
-
-    require_keys_eq!(
-        if input_is_crncy {
-            crncy_mint
-        } else {
-            asset_mint
-        },
-        *swap_accounts.source_token_acc.owner,
-        ErrorCode::InvalidSourceTokenAccount
-    );
-    require_keys_eq!(
-        if input_is_crncy {
-            asset_mint
-        } else {
-            crncy_mint
-        },
-        *swap_accounts.destination_token_acc.owner,
-        ErrorCode::InvalidDestinationTokenAccount
-    );
-
-    let data = DeriverseSwapData {
-        tag: DERIVERSE_INSTRUCTION_TAG,
-        input_crncy: input_is_crncy as u8,
-        padding_u16: 0,
-        instr_id,
-        price: 0,
-        amount: amount_in as i64,
-    };
-
-    let account_metas = vec![
-        AccountMeta::new(swap_accounts.authority.key(), true),
-        AccountMeta::new_readonly(swap_accounts.root.key(), false),
-        AccountMeta::new(swap_accounts.instrument.key(), false),
-        AccountMeta::new(swap_accounts.bids_tree.key(), false),
-        AccountMeta::new(swap_accounts.asks_tree.key(), false),
-        AccountMeta::new(swap_accounts.bid_orders.key(), false),
-        AccountMeta::new(swap_accounts.ask_orders.key(), false),
-        AccountMeta::new(swap_accounts.lines.key(), false),
-        AccountMeta::new(swap_accounts.map.key(), false),
-        AccountMeta::new(swap_accounts.spot_client_infos.key(), false),
-        AccountMeta::new(swap_accounts.spot_client_infos2.key(), false),
-        AccountMeta::new(swap_accounts.candles_1m.key(), false),
-        AccountMeta::new(swap_accounts.candles_15m.key(), false),
-        AccountMeta::new(swap_accounts.candles_day.key(), false),
-        AccountMeta::new_readonly(swap_accounts.community.key(), false),
-        AccountMeta::new(swap_accounts.drvs_vault_asset_token_acc.key(), false),
-        AccountMeta::new(swap_accounts.drvs_vault_crncy_token_acc.key(), false),
-        AccountMeta::new_readonly(swap_accounts.asset_mint.key(), false),
-        AccountMeta::new_readonly(swap_accounts.crncy_mint.key(), false),
-        AccountMeta::new_readonly(swap_accounts.drvs_asset_token_state.key(), false),
-        AccountMeta::new_readonly(swap_accounts.drvs_crncy_token_state.key(), false),
-        AccountMeta::new(client_asset.key(), false),
-        AccountMeta::new(client_crncy.key(), false),
-        AccountMeta::new_readonly(swap_accounts.drvs_auth.key(), false),
-        AccountMeta::new_readonly(swap_accounts.system_program.key(), false),
-        AccountMeta::new_readonly(swap_accounts.asset_token_program.key(), false),
-        AccountMeta::new_readonly(swap_accounts.crncy_token_program.key(), false),
-        AccountMeta::new_readonly(swap_accounts.associated_token_program.key(), false),
-    ];
-
-    let account_infos = vec![
-        swap_accounts.authority.to_account_info(),
-        swap_accounts.root.to_account_info(),
-        swap_accounts.instrument.to_account_info(),
-        swap_accounts.bids_tree.to_account_info(),
-        swap_accounts.asks_tree.to_account_info(),
-        swap_accounts.bid_orders.to_account_info(),
-        swap_accounts.ask_orders.to_account_info(),
-        swap_accounts.lines.to_account_info(),
-        swap_accounts.map.to_account_info(),
-        swap_accounts.spot_client_infos.to_account_info(),
-        swap_accounts.spot_client_infos2.to_account_info(),
-        swap_accounts.candles_1m.to_account_info(),
-        swap_accounts.candles_15m.to_account_info(),
-        swap_accounts.candles_day.to_account_info(),
-        swap_accounts.community.to_account_info(),
-        swap_accounts.drvs_vault_asset_token_acc.to_account_info(),
-        swap_accounts.drvs_vault_crncy_token_acc.to_account_info(),
-        swap_accounts.asset_mint.to_account_info(),
-        swap_accounts.crncy_mint.to_account_info(),
-        swap_accounts.drvs_asset_token_state.to_account_info(),
-        swap_accounts.drvs_crncy_token_state.to_account_info(),
-        client_asset.to_account_info(),
-        client_crncy.to_account_info(),
-        swap_accounts.drvs_auth.to_account_info(),
-        swap_accounts.system_program.to_account_info(),
-        swap_accounts.asset_token_program.to_account_info(),
-        swap_accounts.crncy_token_program.to_account_info(),
-        swap_accounts.associated_token_program.to_account_info(),
-    ];
-
+    let account_metas = swap_accounts.get_account_metas(input_is_crncy);
     let instruction: Instruction = Instruction {
         program_id: deriverse_program::id(),
         accounts: account_metas,
-        data: data.to_bytes(),
+        data,
     };
+
+    let account_infos = swap_accounts.get_account_infos(input_is_crncy);
 
     let dex_processor = &DeriverseProcessor;
     let amount_out = invoke_process(
