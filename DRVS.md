@@ -55,14 +55,14 @@ Below is the complete, 0-indexed list of required accounts:
 
 A critical concept for integrating with Deriverse is that **the roles of "asset" and "currency" are rigidly fixed for every trading pair.**
 
-For example, in a DRV-USDC pair, the Deriverse on-chain program might be configured so that DRV is *always* the `asset` and USDC is *always* the `currency`.
+For example, in a SOL-USDC pair, the Deriverse on-chain program might be configured so that USDC is *always* the `asset` and SOL is *always* the `currency`.
 
 ### Implications for Integration
 
-- **The Account List is Always the Same:** Because the asset/currency roles are fixed, the list of 28 accounts for a given pair (e.g., DRV-USDC) is **always the same and in the same order**, regardless of the swap direction.
-  - The `asset_mint` (Index 5) is always the DRV mint.
+- **The Account List is Always the Same:** Because the asset/currency roles are fixed, the list of 28 accounts for a given pair (e.g., SOL-USDC) is **always the same and in the same order**, regardless of the swap direction.
+  - The `asset_mint` (Index 5) is always the SOL mint.
   - The `crncy_mint` (Index 6) is always the USDC mint.
-  - The `drvs_vault_asset_token_acc` (Index 3) is always the vault for DRV.
+  - The `drvs_vault_asset_token_acc` (Index 3) is always the vault for SOL.
   - ...and so on for all other asset/currency-specific accounts.
 
 - **Swap Direction is Handled Internally:** You do **not** need to change the account order for an A-to-B swap versus a B-to-A swap.
