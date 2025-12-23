@@ -1,4 +1,5 @@
 use anchor_lang::{prelude::*, solana_program::instruction::Instruction};
+use anchor_spl::token_interface::TokenAccount;
 use arrayref::array_ref;
 
 use crate::{
@@ -146,7 +147,9 @@ impl<'info> DeriverseSwapAccounts<'info> {
 
     #[inline]
     fn is_crncy_input(&self) -> Result<bool> {
-        let input_is_crncy = if self.crncy_token_program.key() == *self.source_token_acc.owner {
+        let source_token_acc: InterfaceAccount<'info, TokenAccount> =
+            InterfaceAccount::try_from(self.source_token_acc)?;
+        let input_is_crncy = if self.crncy_mint.key() == source_token_acc.mint {
             true
         } else {
             false
